@@ -97,7 +97,7 @@ def shorten_url():
         short_code = custom_alias
         exists = supabase.table("urls").select("short_code").eq("short_code", short_code).execute()
         if exists.data:
-            return jsonify({"error": "Custom alias already taken"}), 409
+            return jsonify({"error": "Custom alias already taken. Try another."}), 409
     else:
         while True:
             short_code = shortuuid.ShortUUID().random(length=6)
@@ -117,8 +117,10 @@ def shorten_url():
         "updated_at": now
     }).execute()
 
+    short_url = f"{request.scheme}://{request.host}/{short_code}"
+
     return jsonify({
-        "short_url": f"{request.host_url}{short_code}",
+        "short_url": short_url,
         "short_code": short_code,
         "folder": folder,
         "tags": tags.split(",") if tags else [],
@@ -175,7 +177,7 @@ def list_urls():
             "urls": [{
                 "short_code": url["short_code"],
                 "original_url": url["original_url"],
-                "short_url": f"{request.host_url}{url['short_code']}",
+                "short_url": f"{request.scheme}://{request.host}/{url['short_code']}",
                 "clicks": url["clicks"],
                 "folder": url["folder"],
                 "tags": url["tags"].split(",") if url["tags"] else [],
@@ -191,7 +193,7 @@ def generate_qr(short_code):
     url_data = supabase.table("urls").select("short_code").eq("short_code", short_code).execute()
     if not url_data.data:
         return "<html><body><h1>404 - Not Found</h1><p>The requested URL does not exist.</p></body></html>", 404
-    short_url = f"{request.host_url}{short_code}"
+    short_url = f"{request.scheme}://{request.host}/{short_code}"
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(short_url)
     qr.make(fit=True)
