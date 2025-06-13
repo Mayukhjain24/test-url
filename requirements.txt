@@ -9,3 +9,4 @@ werkzeug==3.0.4
 python-dotenv==1.0.1
 validators==0.20.0
 flask-limiter==3.5.0
+redis==4.6.0

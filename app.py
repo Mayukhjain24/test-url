@@ -48,8 +48,9 @@ app.jinja_env.globals['csrf_token'] = generate_csrf_token
 def get_user_id():
     return session.get("user_id", get_remote_address())
 
-limiter = Limiter(key_func=get_user_id)
-limiter.init_app(app)
+# Remove the old limiter initialization here to avoid duplication
+# limiter = Limiter(key_func=get_user_id)
+# limiter.init_app(app)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config["ALLOWED_EXTENSIONS"]
@@ -231,5 +232,24 @@ def dashboard():
 def page_not_found(e):
     return render_template("404.html"), 404
 
+import redis
+from flask_limiter.util import get_remote_address
+from flask_limiter import Limiter
+import os
+
+# Configure Redis storage for Flask-Limiter if REDIS_URL is set
+redis_url = os.getenv("REDIS_URL")
+if redis_url:
+    redis_client = redis.from_url(redis_url)
+    limiter = Limiter(
+        key_func=get_remote_address,
+        storage_uri=redis_url
+    )
+else:
+    limiter = Limiter(key_func=get_remote_address)
+
+limiter.init_app(app)
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
