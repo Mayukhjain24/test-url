@@ -1,4 +1,4 @@
-import os
+from os import makedirs
 from datetime import datetime
 from dotenv import load_dotenv
 import shortuuid
@@ -13,6 +13,8 @@ import validators
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import tempfile
+import redis
+import os
 
 # Load environment variables
 load_dotenv()
@@ -29,7 +31,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 app.config["UPLOAD_FOLDER"] = "uploads"
 app.config["ALLOWED_EXTENSIONS"] = {"png", "jpg", "jpeg", "pdf", "txt"}
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB limit
-os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
 # Session Security (enable in production)
 if os.getenv("FLASK_ENV") == "production":
@@ -47,10 +49,6 @@ app.jinja_env.globals['csrf_token'] = generate_csrf_token
 # Rate Limiting
 def get_user_id():
     return session.get("user_id", get_remote_address())
-
-import redis
-import os
-from flask_limiter import Limiter
 
 redis_url = os.getenv("REDIS_URL")
 if redis_url:
@@ -122,8 +120,12 @@ def shorten_url():
         "updated_at": now
     }).execute()
 
+    # Extract host without protocol for subdomain format
+    host = request.host_url.rstrip('/').replace('http://', '').replace('https://', '')
+
     return jsonify({
         "short_url": f"{request.host_url}{short_code}",
+        "subdomain_url": f"http://{short_code}.{host}",
         "folder": folder,
         "tags": tags.split(",") if tags else [],
         "created_at": now
@@ -243,17 +245,7 @@ def dashboard():
 def page_not_found(e):
     return render_template("404.html"), 404
 
-import redis
-from flask_limiter.util import get_remote_address
-from flask_limiter import Limiter
-import os
-
-# Rate Limiting
-def get_user_id():
-    return session.get("user_id", get_remote_address())
-
-# Configure Redis storage for Flask-Limiter if REDIS_URL is set
-redis_url = os.getenv("REDIS_URL")
+# Rate Limiting (repeated configuration removed for brevity)
 if redis_url:
     redis_client = redis.from_url(redis_url)
     limiter = Limiter(
