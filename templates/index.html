@@ -64,8 +64,8 @@
             resultDiv.classList.add("hidden");
             try {
                 const response = await axios.post("/api/shorten", { original_url: url, custom_alias: customAlias, folder, tags });
-                document.getElementById("short-url").href = response.data.subdomain_url;
-                document.getElementById("short-url").textContent = response.data.subdomain_url;
+                document.getElementById("short-url").href = response.data.short_url;
+                document.getElementById("short-url").textContent = response.data.short_url;
                 document.getElementById("qr-code").src = `/qr/${response.data.short_code}`;
                 resultDiv.classList.remove("hidden");
             } catch (error) {
@@ -87,7 +87,7 @@
                 });
                 document.getElementById("file-url").href = response.data.public_url;
                 document.getElementById("file-url").textContent = response.data.public_url;
-                document.getElementById("file-qr").src = ""; // No QR code for file uploads
+                document.getElementById("file-qr").src = "";
                 uploadResultDiv.classList.remove("hidden");
             } catch (error) {
                 alert(error.response?.data?.error || "Error uploading file");
