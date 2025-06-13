@@ -117,13 +117,10 @@ def shorten_url():
         "updated_at": now
     }).execute()
 
-    scheme = request.scheme
-    host = request.host
-    subdomain_url = f"{scheme}://{short_code}.{host}"
+    short_url = f"{request.scheme}://{request.host}/{short_code}"
 
     return jsonify({
-        "short_url": subdomain_url,  # Primary URL for display and QR code
-        "path_url": f"{scheme}://{host}/{short_code}",  # Fallback for redirection
+        "short_url": short_url,
         "short_code": short_code,
         "folder": folder,
         "tags": tags.split(",") if tags else [],
@@ -180,7 +177,7 @@ def list_urls():
             "urls": [{
                 "short_code": url["short_code"],
                 "original_url": url["original_url"],
-                "short_url": f"{request.scheme}://{url['short_code']}.{request.host}",
+                "short_url": f"{request.scheme}://{request.host}/{url['short_code']}",
                 "clicks": url["clicks"],
                 "folder": url["folder"],
                 "tags": url["tags"].split(",") if url["tags"] else [],
@@ -196,11 +193,9 @@ def generate_qr(short_code):
     url_data = supabase.table("urls").select("short_code").eq("short_code", short_code).execute()
     if not url_data.data:
         return "<html><body><h1>404 - Not Found</h1><p>The requested URL does not exist.</p></body></html>", 404
-    scheme = request.scheme
-    host = request.host
-    subdomain_url = f"{scheme}://{short_code}.{host}"
+    short_url = f"{request.scheme}://{request.host}/{short_code}"
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(subdomain_url)
+    qr.add_data(short_url)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
