@@ -8,19 +8,22 @@ from flask_cors import CORS
 import qrcode
 from werkzeug.utils import secure_filename
 import secrets
-from functools import wraps
 import validators
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import tempfile
 import redis
 import os
+import re
 
 # Load environment variables
 load_dotenv()
 app = Flask(__name__)
 CORS(app)
 app.secret_key = os.getenv("SECRET_KEY", "dev_secret_key")
+
+# Enable subdomain routing
+app.config['SERVER_NAME'] = os.getenv('SERVER_NAME', 'localhost:5000')
 
 # Supabase Configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -33,7 +36,7 @@ app.config["ALLOWED_EXTENSIONS"] = {"png", "jpg", "jpeg", "pdf", "txt"}
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB limit
 makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-# Session Security (enable in production)
+# Session Security
 if os.getenv("FLASK_ENV") == "production":
     app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -52,10 +55,7 @@ def get_user_id():
 
 redis_url = os.getenv("REDIS_URL")
 if redis_url:
-    limiter = Limiter(
-        key_func=get_user_id,
-        storage_uri=redis_url
-    )
+    limiter = Limiter(key_func=get_user_id, storage_uri=redis_url)
 else:
     limiter = Limiter(key_func=get_user_id)
 
@@ -63,6 +63,11 @@ limiter.init_app(app)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config["ALLOWED_EXTENSIONS"]
+
+def is_valid_subdomain(label):
+    if len(label) > 63 or label.startswith('-') or label.endswith('-'):
+        return False
+    return re.match(r'^[a-zA-Z0-9-]*$', label) is not None
 
 @app.route("/")
 def index():
@@ -75,7 +80,6 @@ def shorten_url():
     if not data or ("url" not in data and "original_url" not in data):
         return jsonify({"error": "Missing URL in request."}), 400
 
-    # Accept either 'url' or 'original_url' key from frontend
     original_url = (data.get("url") or data.get("original_url") or "").strip()
     custom_alias = (data.get("custom_alias") or "").strip()
     folder = (data.get("folder") or "").strip()
@@ -84,22 +88,20 @@ def shorten_url():
     if not original_url:
         return jsonify({"error": "URL cannot be empty."}), 400
 
-    # Add scheme if missing
     if not original_url.startswith(("http://", "https://")):
         original_url = "http://" + original_url
 
-    # Validate again after adding scheme
     if not validators.url(original_url):
-        return jsonify({"error": "Invalid URL. Please enter a valid domain like example.com or include http:// or https://."}), 400
+        return jsonify({"error": "Invalid URL."}), 400
 
-    # Check for custom alias
     if custom_alias:
+        if not is_valid_subdomain(custom_alias):
+            return jsonify({"error": "Invalid custom alias. Use letters, digits, and hyphens only."}), 400
         short_code = custom_alias
         exists = supabase.table("urls").select("short_code").eq("short_code", short_code).execute()
         if exists.data:
             return jsonify({"error": "Custom alias already taken"}), 409
     else:
-        # Generate unique short code
         while True:
             short_code = shortuuid.ShortUUID().random(length=6)
             exists = supabase.table("urls").select("short_code").eq("short_code", short_code).execute()
@@ -107,8 +109,6 @@ def shorten_url():
                 break
 
     now = datetime.utcnow().isoformat()
-
-    # Insert into Supabase with all fields
     supabase.table("urls").insert({
         "original_url": original_url,
         "short_code": short_code,
@@ -120,12 +120,14 @@ def shorten_url():
         "updated_at": now
     }).execute()
 
-    # Extract host without protocol for subdomain format
-    host = request.host_url.rstrip('/').replace('http://', '').replace('https://', '')
+    scheme = request.scheme
+    host = request.host_url.rstrip('/').replace(f'{scheme}://', '')
+    subdomain_url = f"{scheme}://{short_code}.{host}"
 
     return jsonify({
-        "short_url": f"{request.host_url}{short_code}",
-        "subdomain_url": f"http://{short_code}.{host}",
+        "short_url": f"{request.host_url}{short_code}",  # Kept for compatibility
+        "subdomain_url": subdomain_url,
+        "short_code": short_code,
         "folder": folder,
         "tags": tags.split(",") if tags else [],
         "created_at": now
@@ -134,23 +136,22 @@ def shorten_url():
 @app.route("/<short_code>")
 def redirect_short_url(short_code):
     try:
-        # Get URL data and update click count atomically
         url_data = supabase.table("urls").select("*").eq("short_code", short_code).execute()
         if not url_data.data:
             return render_template("404.html"), 404
-
         url = url_data.data[0]
-        
-        # Update clicks and last access time
         supabase.table("urls").update({
             "clicks": url["clicks"] + 1,
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", url["id"]).execute()
-
         return redirect(url["original_url"])
     except Exception as e:
         app.logger.error(f"Error redirecting URL {short_code}: {str(e)}")
         return render_template("404.html"), 404
+
+@app.route('/', subdomain='<short_code>')
+def redirect_subdomain(short_code):
+    return redirect_short_url(short_code)
 
 @app.route("/api/urls/stats/<short_code>")
 def get_url_stats(short_code):
@@ -158,7 +159,6 @@ def get_url_stats(short_code):
         url_data = supabase.table("urls").select("*").eq("short_code", short_code).execute()
         if not url_data.data:
             return jsonify({"error": "URL not found"}), 404
-
         url = url_data.data[0]
         return jsonify({
             "short_code": url["short_code"],
@@ -177,15 +177,12 @@ def list_urls():
     try:
         folder = request.args.get("folder")
         tag = request.args.get("tag")
-        
         query = supabase.table("urls").select("*")
         if folder:
             query = query.eq("folder", folder)
         if tag:
             query = query.ilike("tags", f"%{tag}%")
-            
         urls = query.order("created_at", desc=True).execute()
-        
         return jsonify({
             "urls": [{
                 "short_code": url["short_code"],
@@ -206,8 +203,11 @@ def generate_qr(short_code):
     url_data = supabase.table("urls").select("short_code").eq("short_code", short_code).execute()
     if not url_data.data:
         return jsonify({"error": "URL not found"}), 404
+    scheme = request.scheme
+    host = request.host_url.rstrip('/').replace(f'{scheme}://', '')
+    subdomain_url = f"{scheme}://{short_code}.{host}"
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(f"{request.host_url}{short_code}")
+    qr.add_data(subdomain_url)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
@@ -244,18 +244,6 @@ def dashboard():
 @app.errorhandler(404)
 def page_not_found(e):
     return render_template("404.html"), 404
-
-# Rate Limiting (repeated configuration removed for brevity)
-if redis_url:
-    redis_client = redis.from_url(redis_url)
-    limiter = Limiter(
-        key_func=get_user_id,
-        storage_uri=redis_url
-    )
-else:
-    limiter = Limiter(key_func=get_user_id)
-
-limiter.init_app(app)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
