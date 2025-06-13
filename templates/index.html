@@ -31,9 +31,10 @@
                 <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Shorten URL</button>
             </form>
             <div id="result" class="mt-4 hidden">
-                <p class="text-green-600">Shortened URL: <a id="short-url" href="#" target="_blank"></a></p>
+                <p class="text-green-600">Shortened URL: <a id="short-url" href="#" target="_blank" class="underline"></a></p>
                 <img id="qr-code" class="mt-2" alt="QR Code">
             </div>
+            <div id="error" class="mt-4 hidden text-red-600 font-semibold"></div>
             <div id="loading" class="mt-4 hidden text-blue-600 font-semibold">Loading...</div>
         </div>
         <div class="mt-6">
@@ -60,8 +61,10 @@
             const tags = document.getElementById("tags").value.split(",").map(tag => tag.trim()).filter(tag => tag);
             const loadingDiv = document.getElementById("loading");
             const resultDiv = document.getElementById("result");
+            const errorDiv = document.getElementById("error");
             loadingDiv.classList.remove("hidden");
             resultDiv.classList.add("hidden");
+            errorDiv.classList.add("hidden");
             try {
                 const response = await axios.post("/api/shorten", { original_url: url, custom_alias: customAlias, folder, tags });
                 document.getElementById("short-url").href = response.data.short_url;
@@ -69,7 +72,8 @@
                 document.getElementById("qr-code").src = `/qr/${response.data.short_code}`;
                 resultDiv.classList.remove("hidden");
             } catch (error) {
-                alert(error.response?.data?.error || "Error shortening URL");
+                errorDiv.textContent = error.response?.data?.error || "Error shortening URL";
+                errorDiv.classList.remove("hidden");
             } finally {
                 loadingDiv.classList.add("hidden");
             }
@@ -80,7 +84,9 @@
             const formData = new FormData();
             formData.append("file", document.getElementById("file").files[0]);
             const uploadResultDiv = document.getElementById("upload-result");
+            const errorDiv = document.getElementById("error");
             uploadResultDiv.classList.add("hidden");
+            errorDiv.classList.add("hidden");
             try {
                 const response = await axios.post("/api/upload", formData, {
                     headers: { "Content-Type": "multipart/form-data" },
@@ -90,7 +96,8 @@
                 document.getElementById("file-qr").src = "";
                 uploadResultDiv.classList.remove("hidden");
             } catch (error) {
-                alert(error.response?.data?.error || "Error uploading file");
+                errorDiv.textContent = error.response?.data?.error || "Error uploading file";
+                errorDiv.classList.remove("hidden");
             }
         });
     </script>
