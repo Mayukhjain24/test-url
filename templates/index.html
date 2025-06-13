@@ -32,6 +32,7 @@
             </form>
             <div id="result" class="mt-4 hidden">
                 <p class="text-green-600">Shortened URL: <a id="short-url" href="#" target="_blank" class="underline"></a></p>
+                <p class="text-gray-600">Path-based URL (use if subdomain fails): <a id="path-url" href="#" target="_blank" class="underline"></a></p>
                 <img id="qr-code" class="mt-2" alt="QR Code">
             </div>
             <div id="error" class="mt-4 hidden text-red-600 font-semibold"></div>
@@ -69,6 +70,8 @@
                 const response = await axios.post("/api/shorten", { original_url: url, custom_alias: customAlias, folder, tags });
                 document.getElementById("short-url").href = response.data.short_url;
                 document.getElementById("short-url").textContent = response.data.short_url;
+                document.getElementById("path-url").href = response.data.path_url;
+                document.getElementById("path-url").textContent = response.data.path_url;
                 document.getElementById("qr-code").src = `/qr/${response.data.short_code}`;
                 resultDiv.classList.remove("hidden");
             } catch (error) {
