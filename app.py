@@ -48,9 +48,20 @@ app.jinja_env.globals['csrf_token'] = generate_csrf_token
 def get_user_id():
     return session.get("user_id", get_remote_address())
 
-# Remove the old limiter initialization here to avoid duplication
-# limiter = Limiter(key_func=get_user_id)
-# limiter.init_app(app)
+import redis
+import os
+from flask_limiter import Limiter
+
+redis_url = os.getenv("REDIS_URL")
+if redis_url:
+    limiter = Limiter(
+        key_func=get_user_id,
+        storage_uri=redis_url
+    )
+else:
+    limiter = Limiter(key_func=get_user_id)
+
+limiter.init_app(app)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config["ALLOWED_EXTENSIONS"]
@@ -237,16 +248,20 @@ from flask_limiter.util import get_remote_address
 from flask_limiter import Limiter
 import os
 
+# Rate Limiting
+def get_user_id():
+    return session.get("user_id", get_remote_address())
+
 # Configure Redis storage for Flask-Limiter if REDIS_URL is set
 redis_url = os.getenv("REDIS_URL")
 if redis_url:
     redis_client = redis.from_url(redis_url)
     limiter = Limiter(
-        key_func=get_remote_address,
+        key_func=get_user_id,
         storage_uri=redis_url
     )
 else:
-    limiter = Limiter(key_func=get_remote_address)
+    limiter = Limiter(key_func=get_user_id)
 
 limiter.init_app(app)
 
