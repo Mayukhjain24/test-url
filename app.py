@@ -22,9 +22,6 @@ app = Flask(__name__)
 CORS(app)
 app.secret_key = os.getenv("SECRET_KEY", "dev_secret_key")
 
-# Set SERVER_NAME to your production domain
-app.config['SERVER_NAME'] = 'mayukh.space'  # Change to your domain for production
-
 # Supabase Configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -64,7 +61,7 @@ limiter.init_app(app)
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config["ALLOWED_EXTENSIONS"]
 
-def is_valid_subdomain(label):
+def is_valid_alias(label):
     if len(label) > 63 or label.startswith('-') or label.endswith('-'):
         return False
     return re.match(r'^[a-zA-Z0-9-]*$', label) is not None
@@ -95,7 +92,7 @@ def shorten_url():
         return jsonify({"error": "Invalid URL."}), 400
 
     if custom_alias:
-        if not is_valid_subdomain(custom_alias):
+        if not is_valid_alias(custom_alias):
             return jsonify({"error": "Invalid custom alias. Use letters, digits, and hyphens only."}), 400
         short_code = custom_alias
         exists = supabase.table("urls").select("short_code").eq("short_code", short_code).execute()
@@ -120,13 +117,8 @@ def shorten_url():
         "updated_at": now
     }).execute()
 
-    scheme = request.scheme
-    host = app.config['SERVER_NAME']
-    subdomain_url = f"{scheme}://{short_code}.{host}"
-
     return jsonify({
-        "short_url": f"{request.host_url}{short_code}",  # Kept for compatibility
-        "subdomain_url": subdomain_url,
+        "short_url": f"{request.host_url}{short_code}",
         "short_code": short_code,
         "folder": folder,
         "tags": tags.split(",") if tags else [],
@@ -148,10 +140,6 @@ def redirect_short_url(short_code):
     except Exception as e:
         app.logger.error(f"Error redirecting URL {short_code}: {str(e)}")
         return "<html><body><h1>500 - Internal Server Error</h1><p>Something went wrong.</p></body></html>", 500
-
-@app.route('/', subdomain='<short_code>')
-def redirect_subdomain(short_code):
-    return redirect_short_url(short_code)
 
 @app.route("/api/urls/stats/<short_code>")
 def get_url_stats(short_code):
@@ -203,11 +191,9 @@ def generate_qr(short_code):
     url_data = supabase.table("urls").select("short_code").eq("short_code", short_code).execute()
     if not url_data.data:
         return "<html><body><h1>404 - Not Found</h1><p>The requested URL does not exist.</p></body></html>", 404
-    scheme = request.scheme
-    host = app.config['SERVER_NAME']
-    subdomain_url = f"{scheme}://{short_code}.{host}"
+    short_url = f"{request.host_url}{short_code}"
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(subdomain_url)
+    qr.add_data(short_url)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
