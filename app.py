@@ -22,8 +22,8 @@ app = Flask(__name__)
 CORS(app)
 app.secret_key = os.getenv("SECRET_KEY", "dev_secret_key")
 
-# Enable subdomain routing
-app.config['SERVER_NAME'] = os.getenv('SERVER_NAME', 'localhost:5000')
+# Set SERVER_NAME to your production domain
+app.config['SERVER_NAME'] = 'mayukh.space'  # Change to your domain for production
 
 # Supabase Configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -121,7 +121,7 @@ def shorten_url():
     }).execute()
 
     scheme = request.scheme
-    host = request.host_url.rstrip('/').replace(f'{scheme}://', '')
+    host = app.config['SERVER_NAME']
     subdomain_url = f"{scheme}://{short_code}.{host}"
 
     return jsonify({
@@ -138,7 +138,7 @@ def redirect_short_url(short_code):
     try:
         url_data = supabase.table("urls").select("*").eq("short_code", short_code).execute()
         if not url_data.data:
-            return render_template("404.html"), 404
+            return "<html><body><h1>404 - Not Found</h1><p>The requested URL does not exist.</p></body></html>", 404
         url = url_data.data[0]
         supabase.table("urls").update({
             "clicks": url["clicks"] + 1,
@@ -147,7 +147,7 @@ def redirect_short_url(short_code):
         return redirect(url["original_url"])
     except Exception as e:
         app.logger.error(f"Error redirecting URL {short_code}: {str(e)}")
-        return render_template("404.html"), 404
+        return "<html><body><h1>500 - Internal Server Error</h1><p>Something went wrong.</p></body></html>", 500
 
 @app.route('/', subdomain='<short_code>')
 def redirect_subdomain(short_code):
@@ -202,9 +202,9 @@ def list_urls():
 def generate_qr(short_code):
     url_data = supabase.table("urls").select("short_code").eq("short_code", short_code).execute()
     if not url_data.data:
-        return jsonify({"error": "URL not found"}), 404
+        return "<html><body><h1>404 - Not Found</h1><p>The requested URL does not exist.</p></body></html>", 404
     scheme = request.scheme
-    host = request.host_url.rstrip('/').replace(f'{scheme}://', '')
+    host = app.config['SERVER_NAME']
     subdomain_url = f"{scheme}://{short_code}.{host}"
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(subdomain_url)
@@ -239,11 +239,11 @@ def uploaded_file(filename):
 
 @app.route("/dashboard")
 def dashboard():
-    return render_template("dashboard.html")
+    return "<html><body><h1>Dashboard</h1><p>Dashboard functionality coming soon.</p></body></html>"
 
 @app.errorhandler(404)
 def page_not_found(e):
-    return render_template("404.html"), 404
+    return "<html><body><h1>404 - Not Found</h1><p>The requested page does not exist.</p></body></html>", 404
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
